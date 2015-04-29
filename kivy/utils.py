@@ -3,51 +3,56 @@
 Utils
 =====
 
+The Utils module provides a selection of general utility functions and classes
+that may be useful for various applications. These include maths, color,
+algebraic and platform functions.
+
+.. versionchanged:: 1.6.0
+    The OrderedDict class has been removed. Use collections.OrderedDict
+    instead.
+
 '''
 
 __all__ = ('intersection', 'difference', 'strtotuple',
-           'get_color_from_hex', 'get_random_color',
+           'get_color_from_hex', 'get_hex_from_color', 'get_random_color',
            'is_color_transparent', 'boundary',
            'deprecated', 'SafeList',
-           'interpolate', 'OrderedDict', 'QueryDict',
-           'platform', 'escape_markup')
+           'interpolate', 'QueryDict',
+           'platform', 'escape_markup', 'reify')
 
+from os import environ
 from sys import platform as _sys_platform
 from re import match, split
-from UserDict import DictMixin
-
-_platform_android = None
-_platform_ios = None
 
 
 def boundary(value, minvalue, maxvalue):
-    '''Limit a value between a minvalue and maxvalue'''
+    '''Limit a value between a minvalue and maxvalue.'''
     return min(max(value, minvalue), maxvalue)
 
 
 def intersection(set1, set2):
-    '''Return intersection between 2 list'''
-    return filter(lambda s: s in set2, set1)
+    '''Return the intersection of 2 lists.'''
+    return [s for s in set1 if s in set2]
 
 
 def difference(set1, set2):
-    '''Return difference between 2 list'''
-    return filter(lambda s: s not in set2, set1)
+    '''Return the difference between 2 lists.'''
+    return [s for s in set1 if s not in set2]
 
 
 def interpolate(value_from, value_to, step=10):
-    '''Interpolate a value to another. Can be useful to smooth some transition.
-    For example::
+    '''Interpolate between two values. This can be useful for smoothing some
+    transitions. For example::
 
         # instead of setting directly
         self.pos = pos
 
-        # use interpolate, and you'll have a nice transition
+        # use interpolate, and you'll have a nicer transition
         self.pos = interpolate(self.pos, new_pos)
 
     .. warning::
-        This interpolation work only on list/tuple/double with the same
-        dimension. No test are done if the dimension is not the same.
+        These interpolations work only on lists/tuples/doubles with the same
+        dimensions. No test is done to check the dimensions are the same.
     '''
     if type(value_from) in (list, tuple):
         out = []
@@ -59,9 +64,9 @@ def interpolate(value_from, value_to, step=10):
 
 
 def strtotuple(s):
-    '''Convert a tuple string into tuple,
-    with some security check. Designed to be used
-    with eval() function::
+    '''Convert a tuple string into a tuple
+    with some security checks. Designed to be used
+    with the eval() function::
 
         a = (12, 54, 68)
         b = str(a)         # return '(12, 54, 68)'
@@ -83,22 +88,38 @@ def strtotuple(s):
 
 
 def get_color_from_hex(s):
-    '''Transform from hex string color to kivy color'''
+    '''Transform a hex string color to a kivy
+    :class:`~kivy.graphics.Color`.
+    '''
     if s.startswith('#'):
         return get_color_from_hex(s[1:])
 
-    value = [int(x, 16) / 255. for x in split('([0-9a-f]{2})', s) if x != '']
+    value = [int(x, 16) / 255.
+             for x in split('([0-9a-f]{2})', s.lower()) if x != '']
     if len(value) == 3:
         value.append(1)
     return value
 
 
+def get_hex_from_color(color):
+    '''Transform a kivy :class:`~kivy.graphics.Color` to a hex value::
+
+        >>> get_hex_from_color((0, 1, 0))
+        '#00ff00'
+        >>> get_hex_from_color((.25, .77, .90, .5))
+        '#3fc4e57f'
+
+    .. versionadded:: 1.5.0
+    '''
+    return '#' + ''.join(['{0:02x}'.format(int(x * 255)) for x in color])
+
+
 def get_random_color(alpha=1.0):
-    ''' Returns a random color (4 tuple)
+    '''Returns a random color (4 tuple).
 
     :Parameters:
-        `alpha` : float, default to 1.0
-            if alpha == 'random' a random alpha value is generated
+        `alpha` : float, defaults to 1.0
+            If alpha == 'random', a random alpha value is generated.
     '''
     from random import random
     if alpha == 'random':
@@ -108,7 +129,7 @@ def get_random_color(alpha=1.0):
 
 
 def is_color_transparent(c):
-    '''Return true if alpha channel is 0'''
+    '''Return True if the alpha channel is 0.'''
     if len(c) < 4:
         return False
     if float(c[3]) == 0.:
@@ -135,13 +156,13 @@ def deprecated(func):
         if caller_id not in DEPRECATED_CALLERS:
             DEPRECATED_CALLERS.append(caller_id)
             warning = (
-                    'Call to deprecated function %s in %s line %d.'
-                    'Called from %s line %d'
-                    ' by %s().') % (
-                            func.__name__,
-                            func.func_code.co_filename,
-                            func.func_code.co_firstlineno + 1,
-                            file, line, caller)
+                'Call to deprecated function %s in %s line %d.'
+                'Called from %s line %d'
+                ' by %s().' % (
+                    func.__name__,
+                    func.__code__.co_filename,
+                    func.__code__.co_firstlineno + 1,
+                    file, line, caller))
             from kivy.logger import Logger
             Logger.warn(warning)
             if func.__doc__:
@@ -151,10 +172,10 @@ def deprecated(func):
 
 
 class SafeList(list):
-    '''List with clear() method
+    '''List with a clear() method.
 
     .. warning::
-        Usage of iterate() function will decrease your performance.
+        Usage of the iterate() function will decrease your performance.
     '''
 
     def clear(self):
@@ -163,108 +184,8 @@ class SafeList(list):
     @deprecated
     def iterate(self, reverse=False):
         if reverse:
-            return reversed(iter(self))
+            return iter(reversed(self))
         return iter(self)
-
-
-class OrderedDict(dict, DictMixin):
-
-    def __init__(self, *args, **kwds):
-        if len(args) > 1:
-            raise TypeError('expected at most 1 arguments, got %d' % len(args))
-        try:
-            self.__end
-        except AttributeError:
-            self.clear()
-        self.update(*args, **kwds)
-
-    def clear(self):
-        self.__end = end = []
-        end += [None, end, end]         # sentinel node for doubly linked list
-        self.__map = {}                 # key --> [key, prev, next]
-        dict.clear(self)
-
-    def __setitem__(self, key, value):
-        if key not in self:
-            end = self.__end
-            curr = end[1]
-            curr[2] = end[1] = self.__map[key] = [key, curr, end]
-        dict.__setitem__(self, key, value)
-
-    def __delitem__(self, key):
-        dict.__delitem__(self, key)
-        key, prev, next = self.__map.pop(key)
-        prev[2] = next
-        next[1] = prev
-
-    def __iter__(self):
-        end = self.__end
-        curr = end[2]
-        while curr is not end:
-            yield curr[0]
-            curr = curr[2]
-
-    def __reversed__(self):
-        end = self.__end
-        curr = end[1]
-        while curr is not end:
-            yield curr[0]
-            curr = curr[1]
-
-    def popitem(self, last=True):
-        if not self:
-            raise KeyError('dictionary is empty')
-        if last:
-            key = reversed(self).next()
-        else:
-            key = iter(self).next()
-        value = self.pop(key)
-        return key, value
-
-    def __reduce__(self):
-        items = [[k, self[k]] for k in self]
-        tmp = self.__map, self.__end
-        del self.__map, self.__end
-        inst_dict = vars(self).copy()
-        self.__map, self.__end = tmp
-        if inst_dict:
-            return (self.__class__, (items, ), inst_dict)
-        return self.__class__, (items, )
-
-    def keys(self):
-        return list(self)
-
-    setdefault = DictMixin.setdefault
-    update = DictMixin.update
-    pop = DictMixin.pop
-    values = DictMixin.values
-    items = DictMixin.items
-    iterkeys = DictMixin.iterkeys
-    itervalues = DictMixin.itervalues
-    iteritems = DictMixin.iteritems
-
-    def __repr__(self):
-        if not self:
-            return '%s()' % (self.__class__.__name__, )
-        return '%s(%r)' % (self.__class__.__name__, self.items())
-
-    def copy(self):
-        return self.__class__(self)
-
-    @classmethod
-    def fromkeys(cls, iterable, value=None):
-        d = cls()
-        for key in iterable:
-            d[key] = value
-        return d
-
-    def __eq__(self, other):
-        if isinstance(other, OrderedDict):
-            return len(self) == len(other) and self.items() == other.items()
-        return dict.__eq__(self, other)
-
-    def __ne__(self, other):
-        return not self == other
 
 
 class QueryDict(dict):
@@ -285,24 +206,21 @@ class QueryDict(dict):
         try:
             return self.__getitem__(attr)
         except KeyError:
-            try:
-                return super(QueryDict, self).__getattr__(attr)
-            except AttributeError:
-                raise KeyError(attr)
+            return super(QueryDict, self).__getattr__(attr)
 
     def __setattr__(self, attr, value):
         self.__setitem__(attr, value)
 
 
 def format_bytes_to_human(size, precision=2):
-    '''Format a bytes number to human size (B, KB, MB...)
+    '''Format a byte value to a human readable representation (B, KB, MB...).
 
     .. versionadded:: 1.0.8
 
     :Parameters:
         `size`: int
-            Number that represent a bytes number
-        `precision`: int
+            Number that represents the bytes value
+        `precision`: int, defaults to 2
             Precision after the comma
 
     Examples::
@@ -321,40 +239,79 @@ def format_bytes_to_human(size, precision=2):
         size /= 1024.0
 
 
-def platform():
-    '''Return the version of the current platform.
-    This will return one of: win, linux, android, macosx, ios, unknown
+class Platform(object):
+    # refactored to class to allow module function to be replaced
+    # with module variable
 
-    .. versionadded:: 1.0.8
+    def __init__(self):
+        self._platform_ios = None
+        self._platform_android = None
 
-    .. warning:: ios is not currently reported.
-    '''
-    global _platform_ios, _platform_android
+    @deprecated
+    def __call__(self):
+        return self._get_platform()
 
-    if _platform_android is None:
-        try:
-            import android
-            _platform_android = True
-        except ImportError:
-            _platform_android = False
+    def __eq__(self, other):
+        return other == self._get_platform()
 
-    if _platform_ios is None:
-        # TODO implement ios support here
-        _platform_ios = False
+    def __ne__(self, other):
+        return other != self._get_platform()
 
-    # On android, _sys_platform return 'linux2', so prefer to check the import
-    # of Android module than trying to rely on _sys_platform.
-    if _platform_android is True:
-        return 'android'
-    elif _platform_ios is True:
-        return 'ios'
-    elif _sys_platform in ('win32', 'cygwin'):
-        return 'win'
-    elif _sys_platform in ('darwin', ):
-        return 'macosx'
-    elif _sys_platform in ('linux2', 'linux3'):
-        return 'linux'
-    return 'unknown'
+    def __str__(self):
+        return self._get_platform()
+
+    def __repr__(self):
+        return 'platform name: \'{platform}\' from: \n{instance}'.format(
+            platform=self._get_platform(),
+            instance=super(Platform, self).__repr__()
+        )
+
+    def __hash__(self):
+        return self._get_platform().__hash__()
+
+    def _get_platform(self):
+        if self._platform_android is None:
+            # ANDROID_ARGUMENT and ANDROID_PRIVATE are 2 environment variables
+            # from python-for-android project
+            self._platform_android = 'ANDROID_ARGUMENT' in environ
+
+        if self._platform_ios is None:
+            self._platform_ios = (environ.get('KIVY_BUILD', '') == 'ios')
+
+        # On android, _sys_platform return 'linux2', so prefer to check the
+        # import of Android module than trying to rely on _sys_platform.
+        if self._platform_android is True:
+            return 'android'
+        elif self._platform_ios is True:
+            return 'ios'
+        elif _sys_platform in ('win32', 'cygwin'):
+            return 'win'
+        elif _sys_platform == 'darwin':
+            return 'macosx'
+        elif _sys_platform[:5] == 'linux':
+            return 'linux'
+        return 'unknown'
+
+
+platform = Platform()
+'''
+platform is a string describing the current Operating System. It is one
+of: *win*, *linux*, *android*, *macosx*, *ios* or *unknown*.
+You can use it as follows::
+
+    from kivy import platform
+    if platform == 'linux':
+        do_linux_things()
+    if platform() == 'linux': # triggers deprecation warning
+        do_more_linux_things()
+
+.. versionadded:: 1.3.0
+
+.. versionchanged:: 1.8.0
+
+    platform is now a variable instead of a  function.
+
+'''
 
 
 def escape_markup(text):
@@ -368,5 +325,38 @@ def escape_markup(text):
 
     .. versionadded:: 1.3.0
     '''
-    return text.replace('[', '&bl;').replace(']', '&br;').replace('&', '&amp;')
+    return text.replace('&', '&amp;').replace('[', '&bl;').replace(']', '&br;')
 
+
+class reify(object):
+    '''
+    Put the result of a method which uses this (non-data) descriptor decorator
+    in the instance dict after the first call, effectively replacing the
+    decorator with an instance variable.
+
+    It acts like @property, except that the function is only ever called once;
+    after that, the value is cached as a regular attribute. This gives you lazy
+    attribute creation on objects that are meant to be immutable.
+
+    Taken from the `Pyramid project <https://pypi.python.org/pypi/pyramid/>`_.
+
+    To use this as a decorator::
+
+         @reify
+         def lazy(self):
+              ...
+              return hard_to_compute_int
+         first_time = self.lazy   # lazy is reify obj, reify.__get__() runs
+         second_time = self.lazy  # lazy is hard_to_compute_int
+    '''
+
+    def __init__(self, func):
+        self.func = func
+        self.__doc__ = func.__doc__
+
+    def __get__(self, inst, cls):
+        if inst is None:
+            return self
+        retval = self.func(inst)
+        setattr(inst, self.func.__name__, retval)
+        return retval

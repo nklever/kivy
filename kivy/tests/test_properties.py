@@ -4,6 +4,7 @@ Test properties attached to a widget
 
 import unittest
 from kivy.event import EventDispatcher
+from functools import partial
 
 
 class TestProperty(EventDispatcher):
@@ -89,11 +90,11 @@ class PropertiesTestCase(unittest.TestCase):
         a.set(wid, 99)
         self.assertEqual(a.get(wid), 99)
 
-        try:
-            a.set(wid, '')  # string shouldn't be accepted
-            self.fail('number accept string, fail.')
-        except ValueError:
-            pass
+        #try:
+        #    a.set(wid, '')  # string shouldn't be accepted
+        #    self.fail('number accept string, fail.')
+        #except ValueError:
+        #    pass
 
     def test_listcheck(self):
         from kivy.properties import ListProperty
@@ -228,6 +229,25 @@ class PropertiesTestCase(unittest.TestCase):
         x.set(wid, 99)
         self.assertEqual(observe_called, 1)
 
+    def test_reference_child_update(self):
+        from kivy.properties import NumericProperty, ReferenceListProperty
+
+        x = NumericProperty(0)
+        x.link(wid, 'x')
+        x.link_deps(wid, 'x')
+        y = NumericProperty(0)
+        y.link(wid, 'y')
+        y.link_deps(wid, 'y')
+        pos = ReferenceListProperty(x, y)
+        pos.link(wid, 'pos')
+        pos.link_deps(wid, 'pos')
+
+        pos.get(wid)[0] = 10
+        self.assertEqual(pos.get(wid), [10, 0])
+
+        pos.get(wid)[:] = (20, 30)
+        self.assertEqual(pos.get(wid), [20, 30])
+
     def test_dict(self):
         from kivy.properties import DictProperty
 
@@ -268,6 +288,7 @@ class PropertiesTestCase(unittest.TestCase):
     def test_aliasproperty_with_cache(self):
         from kivy.properties import NumericProperty, AliasProperty
         global observe_called
+        observe_called = 0
 
         class CustomAlias(EventDispatcher):
             basevalue = NumericProperty(1)
@@ -311,3 +332,189 @@ class PropertiesTestCase(unittest.TestCase):
         self.assertEqual(wid.basevalue, 2)
         self.assertEqual(wid.prop, 4)
         self.assertEqual(observe_called, 3)
+
+    def test_bounded_numeric_property(self):
+        from kivy.properties import BoundedNumericProperty
+
+        bnp = BoundedNumericProperty(0.0, min=0.0, max=3.5)
+
+        bnp.link(wid, 'bnp')
+
+        bnp.set(wid, 1)
+        bnp.set(wid, 0.0)
+        bnp.set(wid, 3.1)
+        bnp.set(wid, 3.5)
+        self.assertRaises(ValueError, partial(bnp.set, wid, 3.6))
+        self.assertRaises(ValueError, partial(bnp.set, wid, -3))
+
+    def test_bounded_numeric_property_error_value(self):
+        from kivy.properties import BoundedNumericProperty
+
+        bnp = BoundedNumericProperty(0, min=-5, max=5, errorvalue=1)
+        bnp.link(wid, 'bnp')
+
+        bnp.set(wid, 1)
+        self.assertEqual(bnp.get(wid), 1)
+
+        bnp.set(wid, 5)
+        self.assertEqual(bnp.get(wid), 5)
+
+        bnp.set(wid, 6)
+        self.assertEqual(bnp.get(wid), 1)
+
+        bnp.set(wid, -5)
+        self.assertEqual(bnp.get(wid), -5)
+
+        bnp.set(wid, -6)
+        self.assertEqual(bnp.get(wid), 1)
+
+    def test_bounded_numeric_property_error_handler(self):
+        from kivy.properties import BoundedNumericProperty
+
+        bnp = BoundedNumericProperty(
+            0, min=-5, max=5,
+            errorhandler=lambda x: 5 if x > 5 else -5)
+
+        bnp.link(wid, 'bnp')
+
+        bnp.set(wid, 1)
+        self.assertEqual(bnp.get(wid), 1)
+
+        bnp.set(wid, 5)
+        self.assertEqual(bnp.get(wid), 5)
+
+        bnp.set(wid, 10)
+        self.assertEqual(bnp.get(wid), 5)
+
+        bnp.set(wid, -5)
+        self.assertEqual(bnp.get(wid), -5)
+
+        bnp.set(wid, -10)
+        self.assertEqual(bnp.get(wid), -5)
+
+    def test_numeric_string_with_units_check(self):
+        from kivy.properties import NumericProperty
+
+        a = NumericProperty()
+        a.link(wid, 'a')
+        a.link_deps(wid, 'a')
+        self.assertEqual(a.get(wid), 0)
+
+        a.set(wid, '55dp')
+        self.assertEqual(a.get(wid), 55)
+        self.assertEqual(a.get_format(wid), 'dp')
+
+        a.set(wid, u'55dp')
+        self.assertEqual(a.get(wid), 55)
+        self.assertEqual(a.get_format(wid), 'dp')
+
+        a.set(wid, '99in')
+        self.assertEqual(a.get(wid), 9504.0)
+        self.assertEqual(a.get_format(wid), 'in')
+
+        a.set(wid, u'99in')
+        self.assertEqual(a.get(wid), 9504.0)
+        self.assertEqual(a.get_format(wid), 'in')
+
+    def test_property_rebind(self):
+        from kivy.uix.label import Label
+        from kivy.uix.togglebutton import ToggleButton
+        from kivy.lang import Builder
+        from kivy.properties import ObjectProperty, DictProperty, AliasProperty
+        from kivy.clock import Clock
+
+        class ObjWidget(Label):
+            button = ObjectProperty(None, rebind=True, allownone=True)
+
+        class ObjWidgetRebindFalse(Label):
+            button = ObjectProperty(None, rebind=False, allownone=True)
+
+        class DictWidget(Label):
+            button = DictProperty({'button': None}, rebind=True,
+                                  allownone=True)
+
+        class DictWidgetFalse(Label):
+            button = DictProperty({'button': None}, rebind=False)
+
+        class AliasWidget(Label):
+            _button = None
+
+            def setter(self, value):
+                self._button = value
+                return True
+
+            def getter(self):
+                return self._button
+            button = AliasProperty(getter, setter, rebind=True)
+
+        Builder.load_string('''
+<ObjWidget>:
+    text: self.button.state if self.button is not None else 'Unset'
+
+<ObjWidgetRebindFalse>:
+    text: self.button.state if self.button is not None else 'Unset'
+
+<AliasWidget>:
+    text: self.button.state if self.button is not None else 'Unset'
+
+<DictWidget>:
+    text: self.button.button.state if self.button.button is not None\
+    else 'Unset'
+
+<DictWidgetFalse>:
+    text: self.button.button.state if self.button.button is not None\
+    else 'Unset'
+        ''')
+
+        obj = ObjWidget()
+        obj_false = ObjWidgetRebindFalse()
+        dict_rebind = DictWidget()
+        dict_false = DictWidgetFalse()
+        alias_rebind = AliasWidget()
+        button = ToggleButton()
+        Clock.tick()
+        self.assertEqual(obj.text, 'Unset')
+        self.assertEqual(obj_false.text, 'Unset')
+        self.assertEqual(dict_rebind.text, 'Unset')
+        self.assertEqual(dict_false.text, 'Unset')
+        self.assertEqual(alias_rebind.text, 'Unset')
+
+        obj.button = button
+        obj_false.button = button
+        dict_rebind.button.button = button
+        dict_false.button.button = button
+        alias_rebind.button = button
+        Clock.tick()
+        self.assertEqual(obj.text, 'normal')
+        self.assertEqual(obj_false.text, 'normal')
+        self.assertEqual(dict_rebind.text, 'normal')
+        self.assertEqual(dict_false.text, 'Unset')
+        self.assertEqual(alias_rebind.text, 'normal')
+
+        button.state = 'down'
+        Clock.tick()
+        self.assertEqual(obj.text, 'down')
+        self.assertEqual(obj_false.text, 'normal')
+        self.assertEqual(dict_rebind.text, 'down')
+        self.assertEqual(dict_false.text, 'Unset')
+        self.assertEqual(alias_rebind.text, 'down')
+
+        button.state = 'normal'
+        Clock.tick()
+        self.assertEqual(obj.text, 'normal')
+        self.assertEqual(obj_false.text, 'normal')
+        self.assertEqual(dict_rebind.text, 'normal')
+        self.assertEqual(dict_false.text, 'Unset')
+        self.assertEqual(alias_rebind.text, 'normal')
+
+        obj.button = None
+        obj_false.button = None
+        dict_rebind.button.button = None
+        dict_false.button.button = None
+        alias_rebind.button = None
+        Clock.tick()
+        self.assertEqual(obj.text, 'Unset')
+        self.assertEqual(obj_false.text, 'Unset')
+        self.assertEqual(dict_rebind.text, 'Unset')
+        self.assertEqual(dict_false.text, 'Unset')
+        self.assertEqual(alias_rebind.text, 'Unset')
